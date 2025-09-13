@@ -1,0 +1,32 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+sqlalchemy==2.0.23
+python-multipart==0.0.6
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-dotenv==1.0.0
+alembic==1.13.0
+
+# AI Services
+groq
+transformers
+torch
+datasets
+huggingface-hub
+
+# Computer Vision for cheat detection
+opencv-python
+mediapipe
+numpy
+pillow
+
+# HTTP and utilities
+requests
+aiohttp
+
+# Email
+email-validator
+
+# Audio processing (for STT preprocessing)
+pydub
