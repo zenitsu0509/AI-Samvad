@@ -26,13 +26,13 @@ QnAAIwaala is an AI-powered interview platform that conducts real-time technical
 - **Video Monitoring**: Ensure interview integrity
 - **Session Termination**: Automatic termination after 3 violations
 
-### 📊 AI-Powered Evaluation
+### � AI-Powered Evaluation
 
 - **Automated Scoring**: AI evaluates answers and provides scores
 - **Detailed Feedback**: Comprehensive suggestions for improvement
 - **Email Reports**: Results sent directly to user's email
 
-## 🛠️ Technology Stack
+## �️ Technology Stack
 
 - **Frontend**: Next.js with TypeScript and Tailwind CSS
 - **Backend**: FastAPI (Python)
@@ -42,9 +42,9 @@ QnAAIwaala is an AI-powered interview platform that conducts real-time technical
 - **Video**: WebRTC for recording
 - **Email**: SMTP / SendGrid
 
-## 📋 Project Structure
+## � Project Structure
 
-```bash
+```
 QnAAIwaala/
 ├── frontend/          # Next.js application
 ├── backend/           # FastAPI application
@@ -52,43 +52,38 @@ QnAAIwaala/
 └── road_map.txt
 ```
 
-## 📋 Development Roadmap
+## 📋 Roadmap
 
-1. **Phase 1**: Basic setup and user registration
-2. **Phase 2**: AI question generation
-3. **Phase 3**: Voice interaction (TTS/STT)
-4. **Phase 4**: Anti-cheating mechanisms
-5. **Phase 5**: Answer processing and evaluation
-6. **Phase 6**: Result generation and email delivery
-7. **Phase 7**: Advanced features and optimization
+- [ ] Core AI interview engine development
+- [ ] User authentication and profile management
+- [ ] Gmail API integration for report delivery
+- [ ] Speech recognition and analysis
+- [ ] Video interview capabilities
+- [ ] Mobile application development
+- [ ] Advanced analytics and insights
 
-## 🚀 Getting Started
+## 🚧 Development Status
 
-### Prerequisites
+**This project is currently under active development.** 
 
-- Node.js 18+
-- Python 3.8+
-- PostgreSQL
+The tool is being built to provide the best possible interview preparation experience. Stay tuned for updates as we continue to add features and improve functionality.
 
-### Installation
+## 🤝 Contributing
 
-1. Clone the repository
-2. Set up the frontend:
+We welcome contributions from the community! Whether you're interested in:
+- Feature development
+- Bug fixes
+- Documentation improvements
+- Testing and feedback
 
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
+Please feel free to get involved as the project evolves.
 
-3. Set up the backend:
+## 📞 Contact & Support
 
-   ```bash
-   cd backend
-   pip install -r requirements.txt
-   uvicorn main:app --reload
-   ```
+For questions, suggestions, or collaboration opportunities, please reach out through the GitHub repository.
 
-## 📄 License
+---
 
-MIT License
+**Made with ❤️ to help students succeed in their interview journey**
+
+*This README will be continuously updated as the tool development progresses. Check back regularly for the latest features and updates!*

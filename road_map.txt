@@ -1,0 +1,96 @@
+Roadmap for AI Interviewer Taker
+Phase 1 – Basic Setup
+
+Frontend Next.js
+
+User form: Name, Gmail, Choose Domain (NLP, CV, Diffusion, etc.)
+
+Dashboard: Start Interview button.
+
+Backend (FastAPI / Flask / Node.js)
+
+API endpoints: create session, store user info, generate questions, evaluate answers, send email.
+
+Database: (PostgreSQL / MongoDB / Firebase) for user data + results.
+
+Phase 2 – Interview Question Generation
+
+Use LLM (Groq + Llama3 / OpenAI / HuggingFace models) to generate domain-specific questions dynamically.
+
+Example: Generate 5 intermediate NLP interview questions.
+
+Store Q&A session in DB.
+
+Phase 3 – Voice Interaction
+
+Text-to-Speech (TTS) for asking questions:
+
+Options: gTTS, ElevenLabs API, Azure Speech, OpenAI TTS
+
+User Answer Recording
+
+Use MediaRecorder API (Web) or WebRTC to record audio + video.
+
+Show “Record” button → Save to backend in .mp4 or .wav.
+
+Phase 4 – Anti-Cheating Mechanism
+
+Tab Change Detection (Web)
+
+Listen to visibilitychange event in JS.
+
+If user switches tab → increase counter.
+
+If counter ≥ 3 → terminate interview.
+
+(Optional) Eye Gaze / Face Detection with OpenCV + Mediapipe to check if looking away too much.
+
+Phase 5 – Answer Processing
+
+Speech-to-Text (STT)
+
+Options: Whisper API, Google STT, NVIDIA NeMo.
+
+Convert recorded answers into text.
+
+Answer Evaluation (AI Grading)
+
+Prompt LLM: “Here’s the interview question and candidate’s answer. Give a score (1–10), detailed feedback, and improvement suggestions.”
+
+Store scores & feedback.
+
+Phase 6 – Result Generation
+
+Email Result
+
+Use SMTP / SendGrid / AWS SES to send email.
+
+Format: Candidate name, domain, question list, scores, suggestions.
+
+Result Dashboard (optional)
+
+User can log in to view history of interviews.
+
+Phase 7 – Advanced Features (Future)
+
+Multi-round interviews (easy → hard → case study).
+
+Leaderboard / Comparison system (for multiple candidates).
+
+Plagiarism detection (ensure answers are not read from external source).
+
+AI interviewer personality (formal, friendly, tough).
+
+⚡ Tech Stack Suggestion:
+
+Frontend: React (Web) or Flutter (Mobile)
+
+Backend: FastAPI (Python)
+
+Database: PostgreSQL (structured data + scores)
+
+LLM: Groq Llama3 / OpenAI / Local model (UnsLOTH fine-tuned)
+
+TTS/STT: Whisper + ElevenLabs
+
+Video Recording: WebRTC
