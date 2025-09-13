@@ -1,0 +1,347 @@
+import os
+import asyncio
+import aiohttp
+import json
+from typing import Optional, Dict, List
+from dotenv import load_dotenv
+
+load_dotenv()
+
+class AIServiceProvider:
+    """Service provider for AI integrations with Groq and Hugging Face"""
+    
+    def __init__(self):
+        self.groq_api_key = os.getenv("GROQ_API_KEY")
+        self.hf_api_key = os.getenv("HUGGINGFACE_API_KEY")
+        
+        # API endpoints
+        self.groq_base_url = "https://api.groq.com/openai/v1"
+        self.hf_base_url = "https://api-inference.huggingface.co/models"
+        
+        # Model configurations
+        # TTS via Groq
+        self.tts_model_groq = "playai-tts"
+        self.tts_voice_groq = "Basil-PlayAI"
+        self.tts_response_format = "wav"
+        # TTS via Hugging Face (fallback)
+        # Commonly available TTS model that returns audio bytes via Inference API
+        self.hf_tts_model = "espnet/kan-bayashi_ljspeech_vits"
+        # STT via Hugging Face
+        self.stt_model = "openai/whisper-large-v3"
+        # LLM via Groq (env override supported, default to a supported model)
+        self.llm_model = os.getenv("GROQ_LLM_MODEL", "llama-3.1-8b-instant")
+    
+    async def generate_question_with_groq(self, domain: str, difficulty: str = "intermediate", 
+                                        previous_questions: List[str] = None) -> Dict:
+        """Generate interview questions using Groq LLM"""
+        try:
+            if not self.groq_api_key:
+                raise ValueError("Groq API key not configured")
+            
+            # Create prompt based on domain and difficulty
+            prev_q_text = ""
+            if previous_questions:
+                prev_q_text = f"\n\nPrevious questions asked:\n" + "\n".join(f"- {q}" for q in previous_questions)
+                prev_q_text += "\n\nMake sure the new question is different and progressive."
+            
+            prompt = f"""You are an expert technical interviewer for {domain}. 
+Generate 1 {difficulty} level interview question for {domain} domain.
+
+Requirements:
+- The question should be technical and relevant to {domain}
+- Difficulty level: {difficulty}
+- The question should allow for detailed explanations
+- Avoid yes/no questions
+- Focus on concepts, algorithms, or practical applications{prev_q_text}
+
+Return only the question, no additional text."""
+
+            headers = {
+                "Authorization": f"Bearer {self.groq_api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "model": self.llm_model,
+                "messages": [
+                    {"role": "system", "content": "You are a technical interviewer."},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.7,
+                "max_tokens": 200
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.groq_base_url}/chat/completions",
+                    headers=headers,
+                    json=payload
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        question = data["choices"][0]["message"]["content"].strip()
+                        return {
+                            "question": question,
+                            "model": self.llm_model,
+                            "domain": domain,
+                            "difficulty": difficulty,
+                            "success": True
+                        }
+                    else:
+                        error_text = await response.text()
+                        return {
+                            "error": f"Groq API error: {error_text}",
+                            "success": False
+                        }
+                        
+        except Exception as e:
+            return {
+                "error": f"Question generation failed: {str(e)}",
+                "success": False
+            }
+    
+    async def evaluate_answer_with_groq(self, question: str, answer: str, domain: str) -> Dict:
+        """Evaluate interview answer using Groq LLM"""
+        try:
+            if not self.groq_api_key:
+                raise ValueError("Groq API key not configured")
+            
+            prompt = f"""You are an expert technical interviewer evaluating answers for {domain} domain.
+
+Question: {question}
+
+Candidate's Answer: {answer}
+
+Please evaluate this answer and provide:
+1. A score from 1-10 (10 being excellent)
+2. Detailed feedback on the answer quality
+3. Specific suggestions for improvement
+4. What the candidate did well
+
+Format your response as JSON:
+{{
+    "score": <number>,
+    "feedback": "<detailed feedback>",
+    "strengths": ["<strength1>", "<strength2>"],
+    "improvements": ["<improvement1>", "<improvement2>"]
+}}"""
+
+            headers = {
+                "Authorization": f"Bearer {self.groq_api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "model": self.llm_model,
+                "messages": [
+                    {"role": "system", "content": "You are a technical interviewer and evaluator."},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.3,
+                "max_tokens": 500
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.groq_base_url}/chat/completions",
+                    headers=headers,
+                    json=payload
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        result = data["choices"][0]["message"]["content"].strip()
+                        
+                        # Parse JSON response
+                        try:
+                            evaluation = json.loads(result)
+                            evaluation["success"] = True
+                            evaluation["model"] = self.llm_model
+                            return evaluation
+                        except json.JSONDecodeError:
+                            # Fallback if JSON parsing fails
+                            return {
+                                "score": 7.0,
+                                "feedback": result,
+                                "strengths": ["Answer provided"],
+                                "improvements": ["Could be more detailed"],
+                                "success": True,
+                                "model": self.llm_model
+                            }
+                    else:
+                        error_text = await response.text()
+                        return {
+                            "error": f"Groq API error: {error_text}",
+                            "success": False
+                        }
+                        
+        except Exception as e:
+            return {
+                "error": f"Answer evaluation failed: {str(e)}",
+                "success": False
+            }
+    
+    async def text_to_speech_hf(self, text: str) -> Dict:
+        """Convert text to speech using Hugging Face TTS model"""
+        try:
+            if not self.hf_api_key:
+                raise ValueError("Hugging Face API key not configured")
+            
+            headers = {
+                "Authorization": f"Bearer {self.hf_api_key}",
+                "Content-Type": "application/json",
+            }
+            
+            payload = {
+                "inputs": text
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.hf_base_url}/{self.hf_tts_model}",
+                    headers=headers,
+                    json=payload
+                ) as response:
+                    if response.status == 200:
+                        audio_bytes = await response.read()
+                        # Convert to base64 for transmission
+                        import base64
+                        audio_b64 = base64.b64encode(audio_bytes).decode()
+                        
+                        return {
+                            "audio_data": f"data:audio/wav;base64,{audio_b64}",
+                            "model": self.hf_tts_model,
+                            "success": True
+                        }
+                    else:
+                        error_text = await response.text()
+                        return {
+                            "error": f"TTS API error: {error_text}",
+                            "success": False
+                        }
+                        
+        except Exception as e:
+            return {
+                "error": f"TTS conversion failed: {str(e)}",
+                "success": False
+            }
+
+    async def text_to_speech_groq(self, text: str, voice: Optional[str] = None, response_format: Optional[str] = None) -> Dict:
+        """Convert text to speech using Groq TTS (playai-tts). Returns base64 data URL.
+        Enhancements: explicit Accept header, response_format validation, improved error parsing, optional HF fallback.
+        """
+        try:
+            if not self.groq_api_key:
+                raise ValueError("Groq API key not configured")
+
+            fmt = (response_format or self.tts_response_format or "wav").lower()
+            if fmt not in ("wav", "mp3"):
+                fmt = "wav"
+            accept = "audio/wav" if fmt == "wav" else "audio/mpeg"
+
+            headers = {
+                "Authorization": f"Bearer {self.groq_api_key}",
+                "Content-Type": "application/json",
+                "Accept": accept,
+            }
+
+            payload = {
+                "model": self.tts_model_groq,
+                "voice": voice or self.tts_voice_groq,
+                "response_format": fmt,
+                "input": text,
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.groq_base_url}/audio/speech",
+                    headers=headers,
+                    json=payload
+                ) as response:
+                    if response.status == 200:
+                        audio_bytes = await response.read()
+                        import base64
+                        audio_b64 = base64.b64encode(audio_bytes).decode()
+                        return {
+                            "audio_data": f"data:{accept};base64,{audio_b64}",
+                            "model": self.tts_model_groq,
+                            "voice": payload["voice"],
+                            "success": True
+                        }
+                    else:
+                        # Try to parse JSON error if present
+                        try:
+                            data = await response.json()
+                            msg = data.get("error") or data
+                        except Exception:
+                            msg = await response.text()
+                        return {
+                            "error": f"Groq TTS API error ({response.status}): {msg}",
+                            "success": False
+                        }
+        except Exception as e:
+            # Optional lightweight fallback to HF if available
+            try:
+                hf_result = await self.text_to_speech_hf(text)
+                if hf_result.get("success"):
+                    hf_result["note"] = f"Groq TTS failed; fallback used: {str(e)}"
+                    return hf_result
+            except Exception:
+                pass
+            return {
+                "error": f"Groq TTS conversion failed: {str(e)}",
+                "success": False
+            }
+    
+    async def speech_to_text_hf(self, audio_bytes: bytes, content_type: Optional[str] = None) -> Dict:
+        """Convert speech to text using Hugging Face STT model (openai/whisper-large-v3).
+        Optionally forward the incoming content-type (e.g., audio/webm, audio/wav).
+        """
+        try:
+            if not self.hf_api_key:
+                raise ValueError("Hugging Face API key not configured")
+            
+            headers = {
+                "Authorization": f"Bearer {self.hf_api_key}",
+            }
+            if content_type:
+                headers["Content-Type"] = content_type
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.hf_base_url}/{self.stt_model}",
+                    headers=headers,
+                    data=audio_bytes
+                ) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        
+                        # Different models return different formats
+                        transcription = ""
+                        if isinstance(result, dict):
+                            transcription = result.get("text", str(result))
+                        elif isinstance(result, list) and len(result) > 0:
+                            transcription = result[0].get("generated_text", str(result[0]))
+                        else:
+                            transcription = str(result)
+                        
+                        return {
+                            "transcription": transcription,
+                            "model": self.stt_model,
+                            "confidence": 0.9,  # HF doesn't always provide confidence
+                            "success": True
+                        }
+                    else:
+                        error_text = await response.text()
+                        return {
+                            "error": f"STT API error: {error_text}",
+                            "success": False
+                        }
+                        
+        except Exception as e:
+            return {
+                "error": f"STT conversion failed: {str(e)}",
+                "success": False
+            }
+
+# Singleton instance
+ai_service = AIServiceProvider()
