@@ -70,7 +70,7 @@ export default function CameraPreview({ disabled = false, inline = false, width 
       ) : error ? (
         <div className="w-full h-full flex items-center justify-center text-xs text-red-400">{error}</div>
       ) : (
-        <video ref={videoRef} muted playsInline className="w-full h-full object-cover" />
+        <video ref={videoRef} muted playsInline className="w-full h-full object-cover" style={{ transform: "scaleX(-1)" }} />
       )}
     </div>
   );
