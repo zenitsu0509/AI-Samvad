@@ -18,6 +18,7 @@ export default function InterviewPage() {
     questions: string[];
     domain?: string;
     total_questions?: number;
+    preferences?: { send_email?: boolean };
   } | null>(null);
 
   useEffect(() => {
@@ -46,6 +47,7 @@ export default function InterviewPage() {
   const [permDetail, setPermDetail] = useState<{ camera: "granted" | "denied" | "prompt"; mic: "granted" | "denied" | "prompt" }>({ camera: "prompt", mic: "prompt" });
   const questionsRaw: string[] = initialData?.questions ?? [];
   const domain: string | undefined = initialData?.domain;
+  const sendEmailPref: boolean | undefined = (initialData as any)?.preferences?.send_email;
   const durationMinutes: number | undefined = (initialData as any)?.duration_minutes;
   const requestedNum: number | undefined = (initialData as any)?.num_questions;
   const buildQuestions = (base: string[], count?: number): string[] => {
@@ -187,7 +189,7 @@ export default function InterviewPage() {
       const res = await fetch(`${backendUrl}/api/interview/submit-all`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId, answers, questions, domain }),
+        body: JSON.stringify({ session_id: sessionId, answers, questions, domain, send_email: sendEmailPref }),
       });
       if (!res.ok) {
         const t = await res.text();

@@ -30,6 +30,7 @@ export default function UserRegistrationForm() {
     numQuestions: 3,
     durationMinutes: 15,
   });
+  const [emailOptIn, setEmailOptIn] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -40,10 +41,19 @@ export default function UserRegistrationForm() {
       const BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
       // 1) Register user
+      // Only include email if user opted in and provided a non-empty value
+      const regPayload: any = {
+        name: formData.name,
+        domain: formData.domain,
+      };
+      if (emailOptIn && formData.email && formData.email.trim().length > 0) {
+        regPayload.email = formData.email.trim();
+      }
+
       const regRes = await fetch(`${BASE_URL}/api/users/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(regPayload),
       });
       if (!regRes.ok) throw new Error(`Register failed: ${regRes.status}`);
       const regData = await regRes.json();
@@ -67,6 +77,7 @@ export default function UserRegistrationForm() {
             duration_minutes: genData.duration_minutes ?? formData.durationMinutes,
             num_questions: formData.numQuestions,
             user: { name: formData.name, email: formData.email },
+            preferences: { send_email: emailOptIn },
           })
         );
       }
@@ -80,7 +91,10 @@ export default function UserRegistrationForm() {
     }
   };
 
-  const isFormValid = formData.name && formData.email && formData.domain && formData.numQuestions > 0 && formData.durationMinutes > 0;
+  const isFormValid =
+    !!formData.name && (!!formData.domain) && formData.numQuestions > 0 && formData.durationMinutes > 0 &&
+    // email required only if opted in
+    (!emailOptIn || (!!formData.email && /.+@.+\..+/.test(formData.email)));
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-indigo-900 flex items-center justify-center p-4">
@@ -159,7 +173,7 @@ export default function UserRegistrationForm() {
             />
           </div>
 
-          {/* Email Field */}
+          {/* Email Field (optional by checkbox) */}
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-2">
               Email Address
@@ -171,12 +185,22 @@ export default function UserRegistrationForm() {
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-white placeholder-gray-400"
               placeholder="Enter your email address"
-              required
+              required={emailOptIn}
               suppressHydrationWarning
               autoComplete="off"
             />
+            <div className="flex items-center gap-2 mt-2">
+              <input
+                id="emailOptIn"
+                type="checkbox"
+                className="h-4 w-4"
+                checked={emailOptIn}
+                onChange={(e) => setEmailOptIn(e.target.checked)}
+              />
+              <label htmlFor="emailOptIn" className="text-sm text-gray-300">Email me the results</label>
+            </div>
             <p className="text-sm text-gray-400 mt-1">
-              Interview results will be sent to this email
+              {emailOptIn ? 'Interview results will be sent to this email.' : 'Email is optional. You can skip receiving results by email.'}
             </p>
           </div>
 

@@ -44,7 +44,7 @@ app.add_middleware(
 # Models
 class UserRegistration(BaseModel):
     name: str
-    email: EmailStr
+    email: Optional[EmailStr] = None
     domain: str
 
 
@@ -67,6 +67,8 @@ class SubmitAllRequest(BaseModel):
     # Optional recovery fields when backend lost in-memory session (e.g., after reload)
     questions: Optional[list[str]] = None
     domain: Optional[str] = None
+    # Optional: whether to email results to the registered user
+    send_email: Optional[bool] = None
 
 
 # In-memory stores
@@ -437,7 +439,7 @@ async def submit_all(payload: SubmitAllRequest, background_tasks: BackgroundTask
     results_db[payload.session_id] = result
     session["status"] = "completed"
 
-    # Attempt to email results if SMTP is configured and user is known
+    # Attempt to email results if enabled, SMTP is configured, and user is known
     user = None
     try:
         uid = session.get("user_id")
@@ -447,7 +449,13 @@ async def submit_all(payload: SubmitAllRequest, background_tasks: BackgroundTask
         user = None
 
     try:
-        if user and user.get("email"):
+        # Decide default: if client didn't send a flag, default to True only when SMTP is present
+        want_email = payload.send_email
+        if want_email is None:
+            smtp_present = bool(os.getenv("SMTP_HOST")) and bool(os.getenv("SMTP_PORT"))
+            want_email = bool(smtp_present and user and user.get("email"))
+
+        if want_email and user and user.get("email"):
             subject = f"Your Interview Results — {result.get('domain', 'Interview')}"
             plain, html = _build_result_email_content(result, user)
             background_tasks.add_task(
