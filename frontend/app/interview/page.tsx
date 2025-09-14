@@ -37,6 +37,10 @@ export default function InterviewPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   // Track local submit state and a finished flag; results are shown on a dedicated page
   const [finished, setFinished] = useState(false);
+  // Permissions gate: require both camera and microphone
+  const [permChecked, setPermChecked] = useState(false);
+  const [permOk, setPermOk] = useState(false);
+  const [permDetail, setPermDetail] = useState<{ camera: "granted" | "denied" | "prompt"; mic: "granted" | "denied" | "prompt" }>({ camera: "prompt", mic: "prompt" });
   const questionsRaw: string[] = initialData?.questions ?? [];
   const domain: string | undefined = initialData?.domain;
   const durationMinutes: number | undefined = (initialData as any)?.duration_minutes;
@@ -82,6 +86,81 @@ export default function InterviewPage() {
       window.location.href = "/";
     }
   }, [mounted, sessionId]);
+
+  // Check permissions using Permissions API when available (non-blocking, no prompt)
+  useEffect(() => {
+    if (!mounted) return;
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const hasPermApi = typeof navigator !== "undefined" && (navigator as any).permissions && typeof (navigator as any).permissions.query === "function";
+        if (hasPermApi) {
+          const statuses: any = {};
+          try {
+            const mic = await (navigator as any).permissions.query({ name: "microphone" as any });
+            statuses.mic = mic.state as "granted" | "denied" | "prompt";
+            mic.onchange = () => {
+              // Re-check when user toggles
+              run();
+            };
+          } catch {}
+          try {
+            const cam = await (navigator as any).permissions.query({ name: "camera" as any });
+            statuses.camera = cam.state as "granted" | "denied" | "prompt";
+            cam.onchange = () => {
+              run();
+            };
+          } catch {}
+          const micState = (statuses.mic ?? "prompt") as "granted" | "denied" | "prompt";
+          const camState = (statuses.camera ?? "prompt") as "granted" | "denied" | "prompt";
+          if (!cancelled) {
+            setPermDetail({ mic: micState, camera: camState });
+            setPermOk(micState === "granted" && camState === "granted");
+            setPermChecked(true);
+          }
+          return;
+        }
+      } catch {}
+      if (!cancelled) setPermChecked(true);
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [mounted]);
+
+  // Actively request both permissions when user clicks
+  const requestPermissions = async () => {
+    try {
+      // Request both together; if it fails, try individually to inform detail
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      try { stream.getTracks().forEach(t => t.stop()); } catch {}
+      setPermDetail({ mic: "granted", camera: "granted" });
+      setPermOk(true);
+      setPermChecked(true);
+    } catch {
+      // Probe individually to know which failed
+      let mic: "granted" | "denied" | "prompt" = "denied";
+      let camera: "granted" | "denied" | "prompt" = "denied";
+      try {
+        const a = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        try { a.getTracks().forEach(t => t.stop()); } catch {}
+        mic = "granted";
+      } catch (e) {
+        mic = "denied";
+      }
+      try {
+        const v = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+        try { v.getTracks().forEach(t => t.stop()); } catch {}
+        camera = "granted";
+      } catch (e) {
+        camera = "denied";
+      }
+      setPermDetail({ mic, camera });
+      setPermOk(mic === "granted" && camera === "granted");
+      setPermChecked(true);
+    }
+  };
 
   const setTranscriptForCurrent = (text: string) => {
     setTranscripts((prev) => {
@@ -139,6 +218,7 @@ export default function InterviewPage() {
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   useEffect(() => {
     if (!mounted || !sessionId) return;
+    if (!permOk) return; // Don't start timer until permissions are granted
     // initialize or reset timer based on meta (duration)
     try {
       const key = `interview:timer:${sessionId}`;
@@ -171,7 +251,7 @@ export default function InterviewPage() {
         setSecondsLeft(stored ? (parseInt(stored) || 0) : (expectedSecs > 0 ? expectedSecs : null));
       }
     } catch {}
-  }, [mounted, sessionId, durationMinutes]);
+  }, [mounted, sessionId, durationMinutes, permOk]);
 
   const [autoSubmitted, setAutoSubmitted] = useState(false);
 
@@ -185,6 +265,7 @@ export default function InterviewPage() {
       }
       return;
     }
+    if (!permOk) return; // don't tick if permissions not granted
     const id = setInterval(() => {
       setSecondsLeft((s) => {
         const v = (s ?? 0) - 1;
@@ -195,7 +276,7 @@ export default function InterviewPage() {
       });
     }, 1000);
     return () => clearInterval(id);
-  }, [secondsLeft, sessionId, autoSubmitted, submitting]);
+  }, [secondsLeft, sessionId, autoSubmitted, submitting, permOk]);
 
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60);
@@ -228,7 +309,7 @@ export default function InterviewPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Left column: sticky camera container */}
             <aside className="self-start md:sticky md:top-20">
-              <CameraPreview inline fill height={220} disabled={finished || submitting || (secondsLeft !== null && secondsLeft <= 0)} />
+              <CameraPreview inline fill height={220} disabled={!permOk || finished || submitting || (secondsLeft !== null && secondsLeft <= 0)} />
             </aside>
 
             {/* Right column: interview content */}
@@ -253,7 +334,7 @@ export default function InterviewPage() {
                     question={questions[idx]}
                     backendUrl={backendUrl}
                     onTranscribed={setTranscriptForCurrent}
-                    disabled={finished || submitting || (secondsLeft !== null && secondsLeft <= 0)}
+                    disabled={!permOk || finished || submitting || (secondsLeft !== null && secondsLeft <= 0)}
                   />
 
                   {/* Read-only transcript box */}
@@ -274,21 +355,21 @@ export default function InterviewPage() {
                   <button
                     className="px-4 py-2 bg-gray-700 rounded disabled:opacity-50"
                     onClick={() => setIdx((i) => Math.max(0, i - 1))}
-                    disabled={idx === 0}
+                    disabled={!permOk || idx === 0}
                   >
                     Previous
                   </button>
                   <button
                     className="px-4 py-2 bg-blue-600 rounded disabled:opacity-50"
                     onClick={() => setIdx((i) => Math.min(questions.length - 1, i + 1))}
-                    disabled={idx >= questions.length - 1}
+                    disabled={!permOk || idx >= questions.length - 1}
                   >
                     Next
                   </button>
                   <button
                     className="ml-auto px-4 py-2 bg-green-600 rounded disabled:opacity-50"
                     onClick={onFinish}
-                    disabled={submitting}
+                    disabled={!permOk || submitting}
                   >
                     {submitting ? "Submitting..." : "Finish Interview"}
                   </button>
@@ -326,6 +407,28 @@ export default function InterviewPage() {
           </div>
         )}
       </div>
+
+      {/* Permissions gate overlay (blocks until granted) */}
+      {mounted && !permOk && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
+          <div className="w-full max-w-lg rounded-xl border border-gray-700 bg-gray-900 p-6 text-center shadow-xl">
+            <h2 className="text-xl font-semibold">Enable camera and microphone</h2>
+            <p className="mt-2 text-gray-300">
+              To start the interview, please grant access to your camera and microphone.
+            </p>
+            <ul className="mt-4 text-sm text-gray-400 space-y-1 text-left mx-auto max-w-sm">
+              <li>Camera: <span className={permDetail.camera === "granted" ? "text-emerald-400" : permDetail.camera === "denied" ? "text-red-400" : "text-yellow-400"}>{permDetail.camera}</span></li>
+              <li>Microphone: <span className={permDetail.mic === "granted" ? "text-emerald-400" : permDetail.mic === "denied" ? "text-red-400" : "text-yellow-400"}>{permDetail.mic}</span></li>
+            </ul>
+            <div className="mt-5 flex items-center justify-center gap-3">
+              <button onClick={requestPermissions} className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-500">Enable now</button>
+            </div>
+            <div className="mt-3 text-xs text-gray-500">
+              If permissions are blocked in your browser, click the lock icon in the address bar to allow access and reload.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Submitting overlay with motivational quote */}
       {submitting && (
