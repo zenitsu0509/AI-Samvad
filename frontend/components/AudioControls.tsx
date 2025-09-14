@@ -10,9 +10,10 @@ type Props = {
   disabled?: boolean; // when true, disallow speaking/recording and stop any active media
   autoSpeakKey?: string | number; // when changed, triggers auto TTS of the question
   lockRecord?: boolean; // when true, disallow starting a new recording (used after transcription)
+  context?: { name?: string; index: number; total: number; domain?: string };
 };
 
-export default function AudioControls({ sessionId, question, backendUrl, onTranscribed, disabled = false, autoSpeakKey, lockRecord = false }: Props) {
+export default function AudioControls({ sessionId, question, backendUrl, onTranscribed, disabled = false, autoSpeakKey, lockRecord = false, context }: Props) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const [recording, setRecording] = useState(false);
@@ -33,8 +34,26 @@ export default function AudioControls({ sessionId, question, backendUrl, onTrans
     if (disabled) return;
     try {
       setSpeaking(true);
+      // Try to fetch a short human-like preamble
+      let preamble = "";
+      try {
+        const q = new URLSearchParams();
+        if (sessionId) q.set("session_id", sessionId);
+        if (context?.name) q.set("name", context.name);
+        q.set("question_index", String(context?.index ?? 0));
+        q.set("total_questions", String(context?.total ?? 1));
+        if (context?.domain) q.set("domain", context.domain);
+        const pre = await fetch(`${backendUrl}/api/interview/generate-preamble?${q.toString()}`);
+        if (pre.ok) {
+          const data = await pre.json();
+          if (data?.preamble) preamble = String(data.preamble);
+        }
+      } catch {}
+
+      const toSpeak = preamble ? `${preamble} ${question}` : `Hello${context?.name ? ' ' + context.name : ''}. ${question}`;
+
       const form = new FormData();
-      form.append("text", question);
+      form.append("text", toSpeak);
       if (voice) form.append("voice", voice);
       const res = await fetch(`${backendUrl}/api/text-to-speech`, { method: "POST", body: form });
       if (!res.ok) throw new Error(`TTS failed: ${res.status}`);
@@ -47,7 +66,7 @@ export default function AudioControls({ sessionId, question, backendUrl, onTrans
       console.error(e);
       setSpeaking(false);
     }
-  }, [backendUrl, question, voice, disabled]);
+  }, [backendUrl, question, voice, disabled, context, sessionId]);
 
   // Auto-speak when the parent signals (typically after a user gesture like Next or enabling permissions)
   useEffect(() => {

@@ -598,6 +598,39 @@ async def analyze_frame(image_data: str = Form(...), session_id: str = Form(...)
     return analysis_result
 
 
+@app.get("/api/interview/generate-preamble")
+async def generate_preamble(session_id: Optional[str] = None, name: Optional[str] = None, question_index: int = 0, total_questions: int = 1, domain: Optional[str] = None):
+    """Return a short, conversational preamble for the next question.
+    If Groq is unavailable, fallback to simple templates.
+    """
+    # Load question context optionally from session
+    if session_id and session_id in sessions_db:
+        s = sessions_db[session_id]
+        if domain is None:
+            domain = s.get("domain")
+        if not name and s.get("user_id") in users_db:
+            name = users_db[s["user_id"]].get("name")
+
+    def fallback_preamble(nm: Optional[str], idx: int, total: int, dom: Optional[str]) -> str:
+        nm2 = nm or "there"
+        pos = "first" if idx == 0 else ("last" if idx == total - 1 else "next")
+        if pos == "first":
+            return f"Hello {nm2}, let's get started with your interview{(' in ' + dom) if dom else ''}. Here's the first question:"
+        if pos == "last":
+            return f"Great going {nm2}! You've come this far—here's the last, but not the least, question:"
+        return f"Nice progress {nm2}. Let's keep the momentum—here's the next question:"
+
+    if ai_service is not None and hasattr(ai_service, "generate_preamble_with_groq"):
+        try:
+            res = await ai_service.generate_preamble_with_groq(name, "", question_index, total_questions, domain)  # type: ignore
+            if res.get("success"):
+                return {"preamble": res.get("preamble")}
+        except Exception:
+            pass
+    # Fallback
+    return {"preamble": fallback_preamble(name, question_index, total_questions, domain)}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)

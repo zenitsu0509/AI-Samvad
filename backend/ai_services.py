@@ -179,6 +179,62 @@ Format your response as JSON:
                 "error": f"Answer evaluation failed: {str(e)}",
                 "success": False
             }
+
+    async def generate_preamble_with_groq(self, name: Optional[str], question: str, question_index: int, total_questions: int, domain: Optional[str]) -> Dict:
+        """Generate a short, conversational preamble for a question using Groq LLM."""
+        try:
+            if not self.groq_api_key:
+                raise ValueError("Groq API key not configured")
+
+            safe_name = name or "there"
+            position = "first" if question_index == 0 else ("last" if question_index == total_questions - 1 else "next")
+            dom_txt = f" in the {domain} domain" if domain else ""
+            # Keep it concise and human; do not include the question text itself, we append it on client
+            prompt = f"""
+You are a friendly, human interviewer. Write a very short preamble (1–2 sentences) that:
+- Greets the candidate by name ({safe_name}).
+- Acknowledges progress based on position: {position} of {total_questions}.
+- Feels encouraging and conversational{dom_txt}.
+- Does NOT restate or reveal the question content.
+- Ends ready to read the question (e.g., "here it is:" or "let's dive in:").
+
+Candidate name: {safe_name}
+Question position: {question_index + 1} of {total_questions}
+Domain: {domain or 'general'}
+""".strip()
+
+            headers = {
+                "Authorization": f"Bearer {self.groq_api_key}",
+                "Content-Type": "application/json"
+            }
+
+            payload = {
+                "model": self.llm_model,
+                "messages": [
+                    {"role": "system", "content": "You are a warm, concise human interviewer."},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.8,
+                "max_tokens": 120
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.groq_base_url}/chat/completions",
+                    headers=headers,
+                    json=payload
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        content = data["choices"][0]["message"]["content"].strip()
+                        # Trim overly long responses
+                        if len(content) > 400:
+                            content = content[:400].rstrip() + "…"
+                        return {"preamble": content, "success": True, "model": self.llm_model}
+                    else:
+                        return {"success": False, "error": f"Groq API error: {await response.text()}"}
+        except Exception as e:
+            return {"success": False, "error": f"Preamble generation failed: {e}"}
     
     async def text_to_speech_hf(self, text: str) -> Dict:
         """Convert text to speech using Hugging Face TTS model"""

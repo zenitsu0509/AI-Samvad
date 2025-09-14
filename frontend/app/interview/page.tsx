@@ -19,6 +19,7 @@ export default function InterviewPage() {
     domain?: string;
     total_questions?: number;
     preferences?: { send_email?: boolean };
+    user?: { name?: string; email?: string };
   } | null>(null);
 
   useEffect(() => {
@@ -48,6 +49,7 @@ export default function InterviewPage() {
   const questionsRaw: string[] = initialData?.questions ?? [];
   const domain: string | undefined = initialData?.domain;
   const sendEmailPref: boolean | undefined = (initialData as any)?.preferences?.send_email;
+  const userName: string | undefined = (initialData as any)?.user?.name;
   const durationMinutes: number | undefined = (initialData as any)?.duration_minutes;
   const requestedNum: number | undefined = (initialData as any)?.num_questions;
   const buildQuestions = (base: string[], count?: number): string[] => {
@@ -404,6 +406,7 @@ export default function InterviewPage() {
                     disabled={!permOk || finished || submitting || (secondsLeft !== null && secondsLeft <= 0)}
                     autoSpeakKey={autoSpeakKey}
                     lockRecord={Boolean(transcripts[idx])}
+                    context={{ name: userName, index: idx, total: questions.length, domain }}
                   />
 
                   {/* Read-only transcript box */}
