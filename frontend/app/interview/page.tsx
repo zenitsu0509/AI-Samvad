@@ -37,6 +37,9 @@ export default function InterviewPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   // Track local submit state and a finished flag; results are shown on a dedicated page
   const [finished, setFinished] = useState(false);
+  // Track which questions have auto-spoken already, and a key to trigger TTS
+  const [spokenSet, setSpokenSet] = useState<Set<number>>(new Set());
+  const [autoSpeakKey, setAutoSpeakKey] = useState<string | number | undefined>(undefined);
   // Permissions gate: require both camera and microphone
   const [permChecked, setPermChecked] = useState(false);
   const [permOk, setPermOk] = useState(false);
@@ -254,6 +257,31 @@ export default function InterviewPage() {
   }, [mounted, sessionId, durationMinutes, permOk]);
 
   const [autoSubmitted, setAutoSubmitted] = useState(false);
+  const [attentionWarning, setAttentionWarning] = useState<string | null>(null);
+  const [skippedSet, setSkippedSet] = useState<Set<number>>(new Set());
+
+  // Load previously skipped (if any, e.g., refresh)
+  useEffect(() => {
+    if (!mounted || !sessionId) return;
+    try {
+      const raw = sessionStorage.getItem(`interview:skipped:${sessionId}`);
+      if (raw) {
+        const arr = JSON.parse(raw) as number[];
+        if (Array.isArray(arr)) setSkippedSet(new Set(arr));
+      }
+    } catch {}
+  }, [mounted, sessionId]);
+
+  const markSkipped = (i: number) => {
+    if (i < 0 || i >= questions.length) return;
+    if (skippedSet.has(i)) return;
+    const ns = new Set(skippedSet);
+    ns.add(i);
+    setSkippedSet(ns);
+    try {
+      if (sessionId) sessionStorage.setItem(`interview:skipped:${sessionId}`, JSON.stringify(Array.from(ns)));
+    } catch {}
+  };
 
   useEffect(() => {
     if (secondsLeft === null) return;
@@ -284,6 +312,19 @@ export default function InterviewPage() {
     return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
   };
 
+  // Trigger auto-speak on first visit to a question (after permissions are granted)
+  useEffect(() => {
+    if (!permOk) return;
+    if (idx < 0 || idx >= questions.length) return;
+    if (spokenSet.has(idx)) return;
+    const ns = new Set(spokenSet);
+    ns.add(idx);
+    setSpokenSet(ns);
+    setAutoSpeakKey(`${idx}-${Date.now()}`);
+    // We only set the key once per idx to avoid repeated TTS
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [permOk, idx]);
+
   // Avoid hydration mismatch: don't render until mounted and data loaded
   if (!mounted) return null;
   if (!sessionId) return null;
@@ -309,7 +350,26 @@ export default function InterviewPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Left column: sticky camera container */}
             <aside className="self-start md:sticky md:top-20">
-              <CameraPreview inline fill height={220} disabled={!permOk || finished || submitting || (secondsLeft !== null && secondsLeft <= 0)} />
+              <CameraPreview
+                inline
+                fill
+                height={220}
+                disabled={!permOk || finished || submitting || (secondsLeft !== null && secondsLeft <= 0)}
+                enableAttention={true}
+                awayThresholdMs={5000}
+                onAttentionChange={(looking) => setAttentionWarning(looking ? null : "Please look at the screen to continue.")}
+                onAway={() => {
+                  setAttentionWarning("You looked away for too long. Moving to the next question.");
+                  setTimeout(() => {
+                    setAttentionWarning(null);
+                    setIdx((i) => {
+                      // Mark current as skipped before advancing
+                      markSkipped(i);
+                      return Math.min(questions.length - 1, i + 1);
+                    });
+                  }, 800);
+                }}
+              />
             </aside>
 
             {/* Right column: interview content */}
@@ -322,6 +382,11 @@ export default function InterviewPage() {
               )}
 
               <div className="space-y-4">
+                {attentionWarning && (
+                  <div className="p-3 rounded border border-red-500/60 bg-red-950/40 text-red-200 text-sm">
+                    {attentionWarning}
+                  </div>
+                )}
                 <div className="p-4 rounded-lg bg-gray-800 border border-gray-700">
                   <div className="text-sm text-gray-400 mb-1">
                     Question {idx + 1} of {questions.length}
@@ -335,6 +400,8 @@ export default function InterviewPage() {
                     backendUrl={backendUrl}
                     onTranscribed={setTranscriptForCurrent}
                     disabled={!permOk || finished || submitting || (secondsLeft !== null && secondsLeft <= 0)}
+                    autoSpeakKey={autoSpeakKey}
+                    lockRecord={Boolean(transcripts[idx])}
                   />
 
                   {/* Read-only transcript box */}
@@ -352,10 +419,10 @@ export default function InterviewPage() {
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {/* Disallow going back to previous questions */}
                   <button
-                    className="px-4 py-2 bg-gray-700 rounded disabled:opacity-50"
-                    onClick={() => setIdx((i) => Math.max(0, i - 1))}
-                    disabled={!permOk || idx === 0}
+                    className="px-4 py-2 bg-gray-700 rounded opacity-50 cursor-not-allowed"
+                    disabled
                   >
                     Previous
                   </button>
