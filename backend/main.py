@@ -1,9 +1,15 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 from datetime import datetime
 from dotenv import load_dotenv
+import os
+import smtplib
+import ssl
+from email.message import EmailMessage
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 # Optional service imports (keep endpoints loadable even if services missing)
 try:
@@ -114,6 +120,129 @@ DOMAIN_QUESTIONS = {
 }
 
 
+# ----------------------
+# Email utilities
+# ----------------------
+def _build_result_email_content(result: dict, user: Optional[dict]) -> tuple[str, str]:
+    """Return (plain_text, html) bodies for the results email."""
+    user_name = (user or {}).get("name") or "Candidate"
+    domain = result.get("domain", "unknown")
+    total_score = result.get("total_score", 0)
+    unanswered = result.get("unanswered_count", 0)
+    responses = result.get("responses", [])
+
+    # Plain text
+    lines = [
+        f"Hello {user_name},",
+        "",
+        f"Here are your interview results for the {domain} domain:",
+        f"Total Score: {total_score}",
+        f"Unanswered Questions: {unanswered}",
+        "",
+        "Per-question feedback:",
+    ]
+    for r in responses:
+        q = r.get("question", "")
+        a = r.get("answer", "") or "(no answer)"
+        score = r.get("score", 0)
+        feedback = r.get("feedback", "")
+        # Truncate very long answers for email brevity
+        a_short = (a[:300] + "…") if len(a) > 300 else a
+        lines.append("- Question: " + q)
+        lines.append(f"  Score: {score}")
+        if feedback:
+            lines.append(f"  Feedback: {feedback}")
+        lines.append("  Your answer: " + a_short)
+        lines.append("")
+
+    lines.extend([
+        "Thank you for participating.",
+        "",
+        "— AI Interviewer",
+    ])
+    plain = "\n".join(lines)
+
+    # HTML (very simple)
+    html_parts = [
+        f"<p>Hello {user_name},</p>",
+        f"<p>Here are your interview results for the <strong>{domain}</strong> domain.</p>",
+        f"<p><strong>Total Score:</strong> {total_score}<br><strong>Unanswered Questions:</strong> {unanswered}</p>",
+        "<h3>Per-question feedback</h3>",
+        "<ol>",
+    ]
+    for r in responses:
+        q = r.get("question", "")
+        a = r.get("answer", "") or "(no answer)"
+        score = r.get("score", 0)
+        feedback = r.get("feedback", "")
+        a_short = (a[:600] + "…") if len(a) > 600 else a
+        html_parts.append("<li>")
+        html_parts.append(f"<p><strong>Question:</strong> {q}<br><strong>Score:</strong> {score}</p>")
+        if feedback:
+            html_parts.append(f"<p><strong>Feedback:</strong> {feedback}</p>")
+        html_parts.append(f"<p><strong>Your answer:</strong> {a_short}</p>")
+        html_parts.append("</li>")
+    html_parts.extend([
+        "</ol>",
+        "<p>Thank you for participating.</p>",
+        "<p>— AI Interviewer</p>",
+    ])
+    html = "".join(html_parts)
+    return plain, html
+
+
+def send_results_email(to_email: str, subject: str, plain_body: str, html_body: Optional[str] = None) -> None:
+    """Send an email via SMTP using env configuration. Runs in background task.
+
+    Uses MIMEMultipart('alternative') to include both plain text and HTML bodies.
+    """
+    smtp_host = os.getenv("SMTP_HOST", "")
+    smtp_port = int(os.getenv("SMTP_PORT", "0") or 0)
+    smtp_user = os.getenv("SMTP_USER", "")
+    smtp_pass = os.getenv("SMTP_PASSWORD", "")
+    from_email = smtp_user or os.getenv("EMAIL_FROM", "")
+    from_name = os.getenv("EMAIL_FROM_NAME", "AI Interviewer")
+
+    if not (smtp_host and smtp_port and from_email):
+        # Misconfigured; skip silently
+        print("[email] SMTP not configured; skipping send")
+        return
+
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = subject
+    msg['From'] = f"{from_name} <{from_email}>" if from_name else from_email
+    msg['To'] = to_email
+
+    # Attach plain and HTML parts (plain first as fallback)
+    msg.attach(MIMEText(plain_body or "", 'plain', 'utf-8'))
+    if html_body:
+        msg.attach(MIMEText(html_body, 'html', 'utf-8'))
+
+    try:
+        # Use STARTTLS by default (Gmail: smtp.gmail.com:587)
+        context = ssl.create_default_context()
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.ehlo()
+            try:
+                server.starttls(context=context)
+                server.ehlo()
+            except Exception:
+                # If STARTTLS fails (e.g., server expects SSL on connect), try SSL
+                server.close()
+                ssl_port = 465 if smtp_port == 587 else smtp_port
+                with smtplib.SMTP_SSL(smtp_host, ssl_port, context=context) as s2:
+                    if smtp_user and smtp_pass:
+                        s2.login(smtp_user, smtp_pass)
+                    s2.sendmail(from_email, [to_email], msg.as_string())
+                    return
+            if smtp_user and smtp_pass:
+                server.login(smtp_user, smtp_pass)
+            server.sendmail(from_email, [to_email], msg.as_string())
+    except Exception as e:
+        # Log but do not raise to avoid affecting API response
+        print(f"[email] Failed to send email to {to_email}: {e}")
+
+
 # Basic endpoints
 @app.get("/")
 async def root():
@@ -216,7 +345,7 @@ async def submit_answer(session_id: str, question_index: int, answer: str):
 
 
 @app.post("/api/interview/submit-all")
-async def submit_all(payload: SubmitAllRequest):
+async def submit_all(payload: SubmitAllRequest, background_tasks: BackgroundTasks):
     # Recover session if missing and client provided enough info
     if payload.session_id not in sessions_db:
         if payload.questions and payload.domain:
@@ -307,6 +436,30 @@ async def submit_all(payload: SubmitAllRequest):
     }
     results_db[payload.session_id] = result
     session["status"] = "completed"
+
+    # Attempt to email results if SMTP is configured and user is known
+    user = None
+    try:
+        uid = session.get("user_id")
+        if uid and uid in users_db and uid != "unknown":
+            user = users_db[uid]
+    except Exception:
+        user = None
+
+    try:
+        if user and user.get("email"):
+            subject = f"Your Interview Results — {result.get('domain', 'Interview')}"
+            plain, html = _build_result_email_content(result, user)
+            background_tasks.add_task(
+                send_results_email,
+                user["email"],
+                subject,
+                plain,
+                html,
+            )
+    except Exception as e:
+        # Log but continue
+        print(f"[email] Scheduling email failed: {e}")
 
     return {"message": "Interview submitted", "result": result}
 
