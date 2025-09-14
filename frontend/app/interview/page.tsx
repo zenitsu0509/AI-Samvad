@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import AudioControls from "@/components/AudioControls";
+import CameraPreview from "@/components/CameraPreview";
 
 export default function InterviewPage() {
   const params = useSearchParams();
@@ -34,10 +35,8 @@ export default function InterviewPage() {
   const [transcripts, setTranscripts] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [result, setResult] = useState<{
-    total_score: number;
-    responses: Array<{ question: string; score: number; feedback?: string }>;
-  } | null>(null);
+  // Track local submit state and a finished flag; results are shown on a dedicated page
+  const [finished, setFinished] = useState(false);
   const questionsRaw: string[] = initialData?.questions ?? [];
   const domain: string | undefined = initialData?.domain;
   const durationMinutes: number | undefined = (initialData as any)?.duration_minutes;
@@ -64,6 +63,19 @@ export default function InterviewPage() {
   };
   const domainLabel = domain ? DOMAIN_LABELS[domain] ?? domain : "";
 
+  // Choose a motivational quote (client-only UI feedback during submission). Keep hooks before early returns.
+  const quotes = useMemo(
+    () => [
+      "Every interview is a step closer—keep going!",
+      "Believe in your preparation. You’ve got this!",
+      "Growth happens outside the comfort zone—great work today.",
+      "Your effort today builds tomorrow’s opportunity.",
+      "Stay curious, stay confident. Good luck!",
+    ],
+    []
+  );
+  const quote = useMemo(() => quotes[Math.floor(Math.random() * quotes.length)], [quotes]);
+
   useEffect(() => {
     if (!mounted) return;
     if (!sessionId) {
@@ -81,9 +93,12 @@ export default function InterviewPage() {
 
   const onFinish = async () => {
     if (!sessionId) return;
+    setFinished(true);
     setSubmitting(true);
     setSubmitError(null);
-    setResult(null);
+    // Show a short overlay/animation while evaluating
+    const MIN_DELAY_MS = 1800;
+    const startTs = Date.now();
     try {
       // Pad answers to match questions length to satisfy backend contract
       const answers = questions.map((_, i) => transcripts[i] ?? "");
@@ -98,21 +113,20 @@ export default function InterviewPage() {
       }
       const data = await res.json();
       const r = data?.result;
-      setResult({
-        total_score: r?.total_score ?? 0,
-        responses: (r?.responses || []).map((x: any) => ({
-          question: x.question,
-          score: x.score,
-          feedback: x.feedback,
-        })),
-      });
-      // Optionally persist
       if (typeof window !== "undefined") {
         sessionStorage.setItem(`interview:result:${sessionId}`, JSON.stringify(r));
+        sessionStorage.setItem(`interview:answers:${sessionId}`, JSON.stringify(answers));
         try {
           sessionStorage.removeItem(`interview:timer:${sessionId}`);
           sessionStorage.removeItem(`interview:timerMeta:${sessionId}`);
         } catch {}
+        // Ensure a small minimum delay so the submit overlay is visible even if backend is fast
+        const elapsed = Date.now() - startTs;
+        if (elapsed < MIN_DELAY_MS) {
+          await new Promise((r) => setTimeout(r, MIN_DELAY_MS - elapsed));
+        }
+        // Navigate to results landing page
+        window.location.href = `/interview/result?session_id=${encodeURIComponent(sessionId)}`;
       }
     } catch (e: any) {
       setSubmitError(e?.message || String(e));
@@ -204,117 +218,126 @@ export default function InterviewPage() {
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-6">
-      <div className="max-w-3xl mx-auto relative">
-        {/* Corner countdown timer */}
-        {secondsLeft !== null && (
-          <div className="absolute top-0 right-0 m-2 px-3 py-1 rounded bg-black/60 border border-gray-700 text-sm font-mono">
-            {formatTime(Math.max(0, secondsLeft))}
-          </div>
-        )}
+      <div className="w-full max-w-5xl mx-auto">
         <h1 className="text-2xl font-bold mb-4">
           Interview - <span suppressHydrationWarning>{domainLabel}</span>
         </h1>
         {questions.length === 0 ? (
           <p className="text-gray-300">No questions found. Please restart.</p>
         ) : (
-          <div className="space-y-4">
-            <div className="p-4 rounded-lg bg-gray-800 border border-gray-700">
-              <div className="text-sm text-gray-400 mb-1">
-                Question {idx + 1} of {questions.length}
-              </div>
-              <div className="text-lg mb-3">{questions[idx]}</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Left column: sticky camera container */}
+            <aside className="self-start md:sticky md:top-20">
+              <CameraPreview inline fill height={220} disabled={finished || submitting || (secondsLeft !== null && secondsLeft <= 0)} />
+            </aside>
 
-              {/* Audio controls: speak + record/stop */}
-              <AudioControls
-                sessionId={sessionId}
-                question={questions[idx]}
-                backendUrl={backendUrl}
-                onTranscribed={setTranscriptForCurrent}
-              />
-
-              {/* Read-only transcript box */}
-              {transcripts[idx] && (
-                <div className="mt-4">
-                  <label className="block text-sm text-gray-400 mb-1">You said (transcribed)</label>
-                  <textarea
-                    className="w-full bg-gray-900 border border-gray-700 rounded p-3 text-gray-200"
-                    value={transcripts[idx]}
-                    readOnly
-                    rows={4}
-                  />
+            {/* Right column: interview content */}
+            <main className="relative">
+              {/* Corner countdown timer */}
+              {secondsLeft !== null && (
+                <div className="absolute top-0 right-0 m-2 px-3 py-1 rounded bg-black/60 border border-gray-700 text-sm font-mono">
+                  {formatTime(Math.max(0, secondsLeft))}
                 </div>
               )}
-            </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                className="px-4 py-2 bg-gray-700 rounded disabled:opacity-50"
-                onClick={() => setIdx((i) => Math.max(0, i - 1))}
-                disabled={idx === 0}
-              >
-                Previous
-              </button>
-              <button
-                className="px-4 py-2 bg-blue-600 rounded disabled:opacity-50"
-                onClick={() => setIdx((i) => Math.min(questions.length - 1, i + 1))}
-                disabled={idx >= questions.length - 1}
-              >
-                Next
-              </button>
-              <button
-                className="ml-auto px-4 py-2 bg-green-600 rounded disabled:opacity-50"
-                onClick={onFinish}
-                disabled={submitting}
-              >
-                {submitting ? "Submitting..." : "Finish Interview"}
-              </button>
-            </div>
+              <div className="space-y-4">
+                <div className="p-4 rounded-lg bg-gray-800 border border-gray-700">
+                  <div className="text-sm text-gray-400 mb-1">
+                    Question {idx + 1} of {questions.length}
+                  </div>
+                  <div className="text-lg mb-3">{questions[idx]}</div>
 
-            {submitError && (
-              <div className="mt-3 text-sm text-red-400">
-                {submitError}
-                {submitError.includes("Session not found") && (
-                  <div className="mt-2">
-                    <button
-                      className="px-3 py-1 bg-gray-700 rounded"
-                      onClick={() => {
-                        try {
-                          if (typeof window !== "undefined" && sessionId) {
-                            sessionStorage.removeItem(`interview:${sessionId}`);
-                            sessionStorage.removeItem(`interview:result:${sessionId}`);
-                            sessionStorage.removeItem(`interview:timer:${sessionId}`);
-                            sessionStorage.removeItem(`interview:timerMeta:${sessionId}`);
-                          }
-                        } catch {}
-                        window.location.href = "/";
-                      }}
-                    >
-                      Restart interview
-                    </button>
+                  {/* Audio controls: speak + record/stop */}
+                  <AudioControls
+                    sessionId={sessionId}
+                    question={questions[idx]}
+                    backendUrl={backendUrl}
+                    onTranscribed={setTranscriptForCurrent}
+                    disabled={finished || submitting || (secondsLeft !== null && secondsLeft <= 0)}
+                  />
+
+                  {/* Read-only transcript box */}
+                  {transcripts[idx] && (
+                    <div className="mt-4">
+                      <label className="block text-sm text-gray-400 mb-1">You said (transcribed)</label>
+                      <textarea
+                        className="w-full bg-gray-900 border border-gray-700 rounded p-3 text-gray-200"
+                        value={transcripts[idx]}
+                        readOnly
+                        rows={4}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    className="px-4 py-2 bg-gray-700 rounded disabled:opacity-50"
+                    onClick={() => setIdx((i) => Math.max(0, i - 1))}
+                    disabled={idx === 0}
+                  >
+                    Previous
+                  </button>
+                  <button
+                    className="px-4 py-2 bg-blue-600 rounded disabled:opacity-50"
+                    onClick={() => setIdx((i) => Math.min(questions.length - 1, i + 1))}
+                    disabled={idx >= questions.length - 1}
+                  >
+                    Next
+                  </button>
+                  <button
+                    className="ml-auto px-4 py-2 bg-green-600 rounded disabled:opacity-50"
+                    onClick={onFinish}
+                    disabled={submitting}
+                  >
+                    {submitting ? "Submitting..." : "Finish Interview"}
+                  </button>
+                </div>
+
+                {submitError && (
+                  <div className="mt-3 text-sm text-red-400">
+                    {submitError}
+                    {submitError.includes("Session not found") && (
+                      <div className="mt-2">
+                        <button
+                          className="px-3 py-1 bg-gray-700 rounded"
+                          onClick={() => {
+                            try {
+                              if (typeof window !== "undefined" && sessionId) {
+                                sessionStorage.removeItem(`interview:${sessionId}`);
+                                sessionStorage.removeItem(`interview:result:${sessionId}`);
+                                sessionStorage.removeItem(`interview:timer:${sessionId}`);
+                                sessionStorage.removeItem(`interview:timerMeta:${sessionId}`);
+                              }
+                            } catch {}
+                            window.location.href = "/";
+                          }}
+                        >
+                          Restart interview
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
-            )}
 
-            {result && (
-              <div className="mt-6 p-4 rounded-lg bg-gray-800 border border-gray-700">
-                <div className="text-xl font-semibold">Your Score: {result.total_score}</div>
-                <div className="mt-3 space-y-3">
-                  {result.responses.map((r, i) => (
-                    <div key={i} className="text-sm">
-                      <div className="text-gray-400">Q{i + 1}: {r.question}</div>
-                      <div>Score: <span className="font-medium">{r.score}</span></div>
-                      {r.feedback && (
-                        <div className="text-gray-300">Feedback: {r.feedback}</div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                {/* Removed inline results; results are shown on a dedicated page */}
               </div>
-            )}
+            </main>
           </div>
         )}
       </div>
+
+      {/* Submitting overlay with motivational quote */}
+      {submitting && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
+          <div className="w-full max-w-md rounded-xl border border-gray-700 bg-gray-900 p-6 text-center shadow-xl">
+            <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-emerald-500 border-t-transparent" />
+            <div className="text-lg font-semibold">Evaluating your interview…</div>
+            <div className="mt-2 text-gray-300">This usually takes a few seconds.</div>
+            <div className="mt-4 italic text-emerald-300">{quote}</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
