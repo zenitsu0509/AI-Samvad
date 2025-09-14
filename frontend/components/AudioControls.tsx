@@ -8,9 +8,11 @@ type Props = {
   backendUrl: string;
   onTranscribed: (text: string) => void;
   disabled?: boolean; // when true, disallow speaking/recording and stop any active media
+  autoSpeakKey?: string | number; // when changed, triggers auto TTS of the question
+  lockRecord?: boolean; // when true, disallow starting a new recording (used after transcription)
 };
 
-export default function AudioControls({ sessionId, question, backendUrl, onTranscribed, disabled = false }: Props) {
+export default function AudioControls({ sessionId, question, backendUrl, onTranscribed, disabled = false, autoSpeakKey, lockRecord = false }: Props) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const [recording, setRecording] = useState(false);
@@ -47,7 +49,15 @@ export default function AudioControls({ sessionId, question, backendUrl, onTrans
     }
   }, [backendUrl, question, voice, disabled]);
 
-  // Removed auto-speak on mount to avoid browser autoplay restrictions.
+  // Auto-speak when the parent signals (typically after a user gesture like Next or enabling permissions)
+  useEffect(() => {
+    if (autoSpeakKey === undefined) return;
+    if (disabled) return;
+    // Don't interrupt if already speaking or recording
+    if (speaking || recording) return;
+    speak();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSpeakKey]);
 
   const start = async () => {
     if (disabled) return;
@@ -215,9 +225,9 @@ export default function AudioControls({ sessionId, question, backendUrl, onTrans
       <div className="flex flex-col items-start gap-2">
         {!recording ? (
           <button
-            className={`px-4 py-2 rounded ${disabled ? "bg-gray-600" : "bg-emerald-600 hover:bg-emerald-700"}`}
+            className={`px-4 py-2 rounded ${(disabled || lockRecord) ? "bg-gray-600" : "bg-emerald-600 hover:bg-emerald-700"}`}
             onClick={start}
-            disabled={disabled}
+            disabled={disabled || lockRecord}
           >
             Record answer
           </button>
