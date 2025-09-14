@@ -13,7 +13,7 @@ venv/
 # Ignore all env variants everywhere, but keep example templates tracked
 **/.env.*
 !**/.env.example
-
+.pre-commit-config.yaml
 # Next.js
 .next/
 out/
