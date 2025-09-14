@@ -116,6 +116,8 @@ export default function UserRegistrationForm() {
                 className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-white placeholder-gray-400"
                 placeholder="e.g., 3"
                 required
+                suppressHydrationWarning
+                autoComplete="off"
               />
               <p className="text-xs text-gray-400 mt-1">Max based on available questions per domain.</p>
             </div>
@@ -128,6 +130,7 @@ export default function UserRegistrationForm() {
                 value={formData.durationMinutes}
                 onChange={(e) => setFormData({ ...formData, durationMinutes: Number(e.target.value) })}
                 className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-white"
+                suppressHydrationWarning
               >
                 <option value={10}>10</option>
                 <option value={15}>15</option>
@@ -151,6 +154,8 @@ export default function UserRegistrationForm() {
               className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-white placeholder-gray-400"
               placeholder="Enter your full name"
               required
+              suppressHydrationWarning
+              autoComplete="off"
             />
           </div>
 
@@ -167,6 +172,8 @@ export default function UserRegistrationForm() {
               className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-white placeholder-gray-400"
               placeholder="Enter your email address"
               required
+              suppressHydrationWarning
+              autoComplete="off"
             />
             <p className="text-sm text-gray-400 mt-1">
               Interview results will be sent to this email
@@ -197,6 +204,7 @@ export default function UserRegistrationForm() {
                     checked={formData.domain === domain.id}
                     onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
                     className="sr-only"
+                    suppressHydrationWarning
                   />
                   <span className="text-2xl mr-3">{domain.icon}</span>
                   <span className="text-sm font-medium">{domain.label}</span>
