@@ -37,7 +37,7 @@ QnAAIwaala is an AI-powered interview platform that conducts real-time technical
 - **Frontend**: Next.js (TypeScript, TailwindCSS)
 - **Backend**: FastAPI (Python)
 - **State/DB**: In-memory for now (PostgreSQL planned; not required for local dev)
-- **AI**: Groq LLMs via Groq API; Hugging Face Inference API
+- **AI**: Gemini 2.0 Flash (primary), Groq LLMs (fallback); Hugging Face Inference API
 - **TTS**: Groq PlayAI TTS (primary), HF ESPnet VITS (fallback)
 - **STT**: Whisper (HF model `openai/whisper-large-v3` via Inference API)
 - **Video**: WebRTC for recording (frontend)
@@ -114,6 +114,11 @@ GROQ_LLM_MODEL=llama-3.1-8b-instant
 # Hugging Face (fallback TTS + Whisper STT)
 HUGGINGFACE_API_KEY=your_hf_api_key
 
+# Gemini (primary for Q&A LLM)
+GOOGLE_API_KEY=your_gemini_api_key
+# Optional: choose a Gemini model (default: gemini-2.0-flash)
+GEMINI_LLM_MODEL=gemini-2.0-flash
+
 # Optional: SMTP for result emails
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
@@ -127,6 +132,7 @@ Notes:
 
 - The API still works without keys; it will fall back to simple heuristics where possible.
 - Email sending is attempted only when SMTP is configured and a user email is known.
+- For question generation and evaluation, the backend tries Gemini first, then falls back to Groq.
 
 ### Run both apps
 
