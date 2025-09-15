@@ -267,13 +267,16 @@ async def health_ai():
         try:
             groq_ok = bool(getattr(ai_service, "groq_api_key", None))
             hf_ok = bool(getattr(ai_service, "hf_api_key", None))
+            gem_ok = bool(getattr(ai_service, "gemini_api_key", None))
             status.update({
                 "groq_key_present": groq_ok,
                 "hf_key_present": hf_ok,
+                "gemini_key_present": gem_ok,
                 "tts_model": getattr(ai_service, "tts_model_groq", None),
                 "tts_voice_default": getattr(ai_service, "tts_voice_groq", None),
                 "stt_model": getattr(ai_service, "stt_model", None),
                 "llm_model": getattr(ai_service, "llm_model", None),
+                "gemini_model": getattr(ai_service, "gemini_model", None),
             })
         except Exception as e:
             status["error"] = str(e)
@@ -297,22 +300,48 @@ async def register_user(user: UserRegistration):
 # Sessions / Questions
 @app.post("/api/interview/generate-questions")
 async def generate_questions(domain: str, user_id: str, num_questions: int | None = None, duration_minutes: int | None = None):
-    if domain not in DOMAIN_QUESTIONS:
-        raise HTTPException(status_code=400, detail=f"Domain '{domain}' not supported")
+    """Generate questions via AI when available (Gemini primary, Groq fallback), else use built-ins."""
     if user_id not in users_db:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Select questions per requested count (clamped to available)
-    all_qs = DOMAIN_QUESTIONS[domain]
-    if num_questions is None or num_questions <= 0:
-        questions = all_qs
-        num_questions = len(all_qs)
-    else:
-        if num_questions <= len(all_qs):
-            questions = all_qs[: num_questions]
+    questions: list[str] = []
+    # Prefer AI generation if available
+    if ai_service is not None and hasattr(ai_service, "generate_question"):
+        try:
+            count = num_questions if (num_questions and num_questions > 0) else 3
+            prev: list[str] = []
+            for _ in range(count):
+                res = await ai_service.generate_question(domain, previous_questions=prev)  # type: ignore
+                if res.get("success") and res.get("question"):
+                    q = str(res["question"]).strip()
+                    if q:
+                        questions.append(q)
+                        prev.append(q)
+                else:
+                    # Stop AI loop on error and fallback below
+                    print(f"[AI] Question generation via AI failed: {res.get('error')}")
+                    questions = []
+                    break
+        except Exception as e:
+            print(f"[AI] Error generating questions via AI: {e}")
+            questions = []
+
+    # Fallback to built-in domain list if AI unavailable or failed
+    if not questions:
+        if domain not in DOMAIN_QUESTIONS:
+            raise HTTPException(status_code=400, detail=f"Domain '{domain}' not supported and AI unavailable")
+        all_qs = DOMAIN_QUESTIONS[domain]
+        if num_questions is None or num_questions <= 0:
+            questions = all_qs
+            num_questions = len(all_qs)
         else:
-            # Cycle through the list to reach requested count
-            questions = [all_qs[i % len(all_qs)] for i in range(num_questions)]
+            if num_questions <= len(all_qs):
+                questions = all_qs[: num_questions]
+            else:
+                questions = [all_qs[i % len(all_qs)] for i in range(num_questions)]
+    else:
+        # If AI succeeded, ensure num_questions reflects actual count
+        num_questions = len(questions)
 
     # Clamp/normalize duration
     if duration_minutes is not None and duration_minutes <= 0:
@@ -369,7 +398,7 @@ async def submit_all(payload: SubmitAllRequest, background_tasks: BackgroundTask
     if not isinstance(payload.answers, list) or len(payload.answers) != len(questions):
         raise HTTPException(status_code=400, detail="Answers array must match questions length")
 
-    # Evaluate answers: prefer Groq evaluator if available, else simple heuristic
+    # Evaluate answers: prefer Gemini primary, fallback to Groq via ai_service.evaluate_answer; else heuristic
     responses = []
     for i, (q, a) in enumerate(zip(questions, payload.answers)):
         score = 0.0
@@ -388,9 +417,9 @@ async def submit_all(payload: SubmitAllRequest, background_tasks: BackgroundTask
                 "improvements": ["Provide at least a brief attempt"] or improvements,
             })
             continue
-        if ai_service is not None and hasattr(ai_service, "evaluate_answer_with_groq"):
+        if ai_service is not None and hasattr(ai_service, "evaluate_answer"):
             try:
-                result = await ai_service.evaluate_answer_with_groq(q, a or "", session.get("domain", ""))  # type: ignore
+                result = await ai_service.evaluate_answer(q, a or "", session.get("domain", ""))  # type: ignore
                 if result.get("success"):
                     score = float(result.get("score", 0.0))
                     feedback = str(result.get("feedback", ""))
