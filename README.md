@@ -34,13 +34,14 @@ QnAAIwaala is an AI-powered interview platform that conducts real-time technical
 
 ## 🛠️ Technology Stack
 
-- **Frontend**: Next.js with TypeScript and Tailwind CSS
+- **Frontend**: Next.js (TypeScript, TailwindCSS)
 - **Backend**: FastAPI (Python)
-- **Database**: PostgreSQL
-- **AI**: Groq Llama3 / OpenAI
-- **TTS/STT**: ElevenLabs, Whisper API
-- **Video**: WebRTC for recording
-- **Email**: SMTP / SendGrid
+- **State/DB**: In-memory for now (PostgreSQL planned; not required for local dev)
+- **AI**: Groq LLMs via Groq API; Hugging Face Inference API
+- **TTS**: Groq PlayAI TTS (primary), HF ESPnet VITS (fallback)
+- **STT**: Whisper (HF model `openai/whisper-large-v3` via Inference API)
+- **Video**: WebRTC for recording (frontend)
+- **Email**: SMTP (Gmail/SendGrid or any SMTP provider)
 
 ## 📋 Project Structure
 
@@ -67,8 +68,9 @@ QnAAIwaala/
 ### Prerequisites
 
 - Node.js 18+
-- Python 3.8+
-- PostgreSQL
+- Python 3.10+ (recommended)
+- Git
+- Optional: PostgreSQL (for future phases; not needed now)
 
 ### Installation
 
@@ -85,9 +87,101 @@ QnAAIwaala/
 
    ```bash
    cd backend
+   # (optional) create & activate a virtual env
+   python -m venv .venv
+   source .venv/Scripts/activate  # on Git Bash/Windows
+   # source .venv/bin/activate    # on macOS/Linux
+
    pip install -r requirements.txt
-   uvicorn main:app --reload
+
+   # 1) From inside ./backend (recommended during dev):
+   uvicorn main:app --reload --port 8000
+
+   # 2) Or from repo root (alternative):
+   # uvicorn backend.main:app --reload --port 8000
    ```
+
+### Environment variables (backend)
+
+Create a `.env` file inside `backend/` to enable AI services and optional email. Minimal example:
+
+```env
+# Groq (LLM + TTS)
+GROQ_API_KEY=your_groq_api_key
+# Optional: choose a Groq model (default: llama-3.1-8b-instant)
+GROQ_LLM_MODEL=llama-3.1-8b-instant
+
+# Hugging Face (fallback TTS + Whisper STT)
+HUGGINGFACE_API_KEY=your_hf_api_key
+
+# Optional: SMTP for result emails
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your_email@gmail.com
+SMTP_PASSWORD=app_password_or_smtp_password
+EMAIL_FROM=your_email@gmail.com
+EMAIL_FROM_NAME=AI Interviewer
+```
+
+Notes:
+
+- The API still works without keys; it will fall back to simple heuristics where possible.
+- Email sending is attempted only when SMTP is configured and a user email is known.
+
+### Run both apps
+
+Open two terminals:
+
+1) Backend (port 8000):
+
+```bash
+cd backend
+uvicorn main:app --reload --port 8000
+```
+
+1) Frontend (port 3000):
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The backend enables CORS for `http://localhost:3000` and `http://127.0.0.1:3000` by default.
+
+## 🧭 API quick reference (backend)
+
+- `GET /` → Health message: API running
+- `GET /health` → Status and timestamp
+- `GET /health/ai` → Presence of AI keys and configured models (no secrets)
+
+Users & Sessions:
+
+- `POST /api/users/register` → Register a user `{ name, email?, domain }`
+- `POST /api/interview/generate-questions` → Query params: `domain`, `user_id`, optional `num_questions`, `duration_minutes`
+- `GET /api/users/{user_id}/sessions` → List sessions for user
+
+Interview flow:
+
+- `POST /api/interview/submit-all` → Body: `{ session_id, answers: string[], questions?, domain?, send_email? }`
+- `GET /api/interview/results/{session_id}` → Get computed results
+- `GET /api/interview/generate-preamble` → Short, conversational preamble for next question
+
+Voice & Anti-cheat:
+
+- `POST /api/text-to-speech` → form-data: `text`, optional `voice`, `response_format` (`wav`|`mp3`)
+- `POST /api/speech-to-text` → form-data file: `audio_file`
+- `POST /api/cheat-detection` → JSON: `{ session_id, event_type, timestamp, confidence }`
+- `POST /api/analyze-frame` → form-data: `image_data` (base64), `session_id`
+
+Response shapes are documented inline in the backend code under `backend/main.py` and `backend/ai_services.py`.
+
+## 🔧 Troubleshooting
+
+- CORS: If you access the frontend from a different origin/port, add it in `backend/main.py` under `allow_origins`.
+- Ports: Default frontend runs on `3000`, backend on `8000`. Adjust `uvicorn` `--port` if needed.
+- Dependencies: Installing `torch` on Windows can take time; ensure Python 3.10+ and sufficient disk space.
+- Optional modules: Cheat detection falls back to disabled mode if OpenCV/MediaPipe are unavailable; the API responds with a clear message.
 
 ## 📄 License
 
