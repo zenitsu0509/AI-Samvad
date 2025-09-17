@@ -1,9 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 export default function InterviewResultPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-900 text-white p-6">Loading…</div>}>
+      <InterviewResultContent />
+    </Suspense>
+  );
+}
+
+function InterviewResultContent() {
   const params = useSearchParams();
   const sessionId = params.get("session_id");
 

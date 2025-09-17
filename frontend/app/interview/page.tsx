@@ -1,11 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import AudioControls from "@/components/AudioControls";
 import CameraPreview from "@/components/CameraPreview";
 
+// Page wrapper that provides the required Suspense boundary for useSearchParams()
 export default function InterviewPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-900 text-white p-6">Loading…</div>}>
+      <InterviewContent />
+    </Suspense>
+  );
+}
+
+function InterviewContent() {
   const params = useSearchParams();
   const sessionId = params.get("session_id");
 
