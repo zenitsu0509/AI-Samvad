@@ -126,6 +126,12 @@ SMTP_USER=your_email@gmail.com
 SMTP_PASSWORD=app_password_or_smtp_password
 EMAIL_FROM=your_email@gmail.com
 EMAIL_FROM_NAME=AI Interviewer
+
+# CORS (optional): add extra origins or override regex
+# Comma-separated exact origins (in addition to localhost)
+CORS_ALLOW_ORIGINS=https://yourdomain.com,https://yourproject.vercel.app
+# Regex for allowed origins (default allows any https://*.vercel.app)
+CORS_ALLOW_ORIGIN_REGEX=https://.*\.vercel\.app
 ```
 
 Notes:
