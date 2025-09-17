@@ -1,4 +1,4 @@
-# QnAAIwaala - AI Interviewer Taker 🤖💼
+# AI-Samvad - AI Interviewer Taker 🤖💼
 
 **An intelligent interview platform that conducts domain-specific technical interviews using AI.**
 
