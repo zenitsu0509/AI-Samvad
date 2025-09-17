@@ -33,9 +33,22 @@ load_dotenv()
 
 # App
 app = FastAPI(title="AI Interviewer API", version="2.0.0")
+
+# CORS: allow localhost for dev, plus optional env-configured origins and a regex for Vercel by default
+default_origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+extra_origins_env = os.getenv("CORS_ALLOW_ORIGINS", "").strip()
+extra_origins = [o.strip() for o in extra_origins_env.split(",") if o.strip()] if extra_origins_env else []
+
+# You can override this via CORS_ALLOW_ORIGIN_REGEX. By default, allow any https://*.vercel.app
+allow_origin_regex = os.getenv("CORS_ALLOW_ORIGIN_REGEX", r"https://.*\.vercel\.app")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=default_origins + extra_origins,
+    allow_origin_regex=allow_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
