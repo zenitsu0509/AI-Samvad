@@ -57,7 +57,7 @@ Email Integration
 - Score breakdown by domain (TODO)
 - Improvement suggestions ✅
 - Interview session summary (TODO)
-
+- Add yolo model for better cheating detection 
 Dashboard
 - Real-time interview progress (TODO)
 - Live cheat detection status (TODO)
