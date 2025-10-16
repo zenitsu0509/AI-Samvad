@@ -29,5 +29,5 @@ aiohttp
 # Email
 email-validator
 
-# Audio processing (for STT preprocessing)
+# Audio processing
 pydub
